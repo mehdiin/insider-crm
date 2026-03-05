@@ -349,16 +349,10 @@ export function AppProvider({ children }) {
     // Backup local immédiat
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     // Sauvegarde Supabase debouncée
-    const timer = setTimeout(async () => {
-      try {
-        const { error } = await supabase
-          .from('app_state')
-          .upsert({ id: 'default', data: state, updated_at: new Date().toISOString() });
-        if (error) console.error('[Supabase upsert error]', error);
-        else console.log('[Supabase] upsert OK, todos:', state.todos.length);
-      } catch (e) {
-        console.error('[Supabase upsert exception]', e);
-      }
+    const timer = setTimeout(() => {
+      supabase
+        .from('app_state')
+        .upsert({ id: 'default', data: state, updated_at: new Date().toISOString() });
     }, 600);
     return () => clearTimeout(timer);
   }, [state, loaded]);

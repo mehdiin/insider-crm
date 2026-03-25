@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { genId } from '../utils/id';
 
 // SVG icons (stroke, 20×20 viewBox 0 0 24 24)
@@ -61,6 +62,7 @@ const DEFAULT_STAGES = {
 
 export default function Sidebar({ activeSection, activeSubView, onSectionChange, onSubViewChange, darkMode, onToggleDark }) {
   const { state, dispatch } = useApp();
+  const { profile, signOut } = useAuth();
   const [showAddFor,      setShowAddFor]      = useState(null); // 'negociation' | 'projets'
   const [newBoardName,    setNewBoardName]    = useState('');
   const [openTaches,      setOpenTaches]      = useState(true);
@@ -322,7 +324,7 @@ export default function Sidebar({ activeSection, activeSubView, onSectionChange,
           ))}
         </nav>
 
-        {/* ── Dark mode toggle ─────────────────────────────────────────── */}
+        {/* ── Bottom buttons ──────────────────────────────────────────── */}
         <div className="icon-bar-bottom">
           <button
             className="icon-bar-item"
@@ -350,11 +352,29 @@ export default function Sidebar({ activeSection, activeSubView, onSectionChange,
               </svg>
             )}
           </button>
+          <button
+            className="icon-bar-item"
+            onClick={signOut}
+            data-tooltip="Déconnexion"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+          </button>
         </div>
       </div>
 
       {/* ── Sub-panel ─────────────────────────────────────────────────────── */}
       <div className="sub-panel">
+        {profile && (
+          <div className="sp-user-info">
+            <span className="sp-user-email">{profile.display_name || profile.email}</span>
+            {profile.role === 'super_admin' && <span className="sp-user-badge">Admin</span>}
+          </div>
+        )}
         {renderContent()}
       </div>
 

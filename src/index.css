@@ -177,6 +177,31 @@ input  { font-family: inherit; }
   border-right: 1px solid rgba(255,255,255,0.05);
   flex-shrink: 0;
 }
+/* User info in sub-panel */
+.sp-user-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 6px;
+  font-size: 11px;
+  color: #888;
+}
+.sp-user-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sp-user-badge {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.1);
+  color: #aaa;
+  flex-shrink: 0;
+}
+
 .sp-header {
   padding: 18px 12px 8px;
   font-size: 10px;
@@ -1870,6 +1895,158 @@ html:not(.dark) .detail-subtask-selected {
   margin-bottom: 0;
 }
 .detail-notes::placeholder { color: #d1d5db; }
+
+/* ── Detail panel: Marque & Talent pickers ──────────────────────────────── */
+.detail-links-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 0;
+}
+.detail-link-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.detail-link-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* Chips — same colors as todo list */
+.detail-org-chip,
+.detail-talent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  height: 25px;
+  white-space: nowrap;
+  cursor: default;
+  position: relative;
+}
+.detail-org-chip {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+.detail-talent-chip {
+  background: #fce7f3;
+  color: #be185d;
+  border: 1px solid #fbcfe8;
+}
+html.dark .detail-org-chip    { background: #0c2a3e; color: #7dd3fc; border-color: #1e4a6e; }
+html.dark .detail-talent-chip { background: #3b0a22; color: #f9a8d4; border-color: #6b1f3e; }
+
+/* Remove bubble — top-right, same as todo list */
+.detail-link-chip-x {
+  display: none;
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 10px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  line-height: 1;
+  z-index: 2;
+  color: #fff;
+}
+.detail-org-chip .detail-link-chip-x    { background: #0369a1; }
+.detail-talent-chip .detail-link-chip-x { background: #be185d; }
+.detail-org-chip .detail-link-chip-x:hover    { background: #075985; }
+.detail-talent-chip .detail-link-chip-x:hover { background: #9d174d; }
+html.dark .detail-org-chip .detail-link-chip-x    { background: #7dd3fc; color: #0c2a3e; }
+html.dark .detail-talent-chip .detail-link-chip-x { background: #f9a8d4; color: #3b0a22; }
+.detail-org-chip:hover .detail-link-chip-x,
+.detail-talent-chip:hover .detail-link-chip-x { display: flex; }
+
+/* Add button — simple +, round hover */
+.detail-link-add {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.1s;
+}
+.detail-link-add:hover {
+  background: rgba(128,128,128,0.15);
+}
+/* Dropdown */
+.detail-link-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 180px;
+  max-width: 240px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  z-index: 300;
+  overflow: hidden;
+}
+.detail-link-search {
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+.detail-link-search::placeholder { color: var(--text-muted); }
+.detail-link-options {
+  max-height: 160px;
+  overflow-y: auto;
+}
+.detail-link-opt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.detail-link-opt:hover,
+.detail-link-opt.selected { background: rgba(128,128,128,0.1); }
+.detail-link-create { color: var(--text-muted); font-style: italic; }
+.detail-link-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
 
 .detail-divider { height: 1px; background: var(--border); margin: 10px 0; }
 

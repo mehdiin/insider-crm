@@ -102,6 +102,118 @@ function IconFlag({ priority }) {
   );
 }
 
+// ── Org / Talent picker for detail panel ─────────────────────────────────────
+
+function OrgIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="7" width="20" height="14" rx="2"/>
+      <path d="M16 7V5a4 4 0 0 0-8 0v2"/>
+    </svg>
+  );
+}
+function TalentIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+      <circle cx="12" cy="7" r="4"/>
+    </svg>
+  );
+}
+
+function DetailLinkPicker({ type, label, ids, options, onChange, onCreate }) {
+  const [open, setOpen]     = useState(false);
+  const [search, setSearch] = useState('');
+  const [selIdx, setSelIdx] = useState(0);
+  const ref = useRef(null);
+
+  const isOrg     = type === 'org';
+  const Icon      = isOrg ? OrgIcon : TalentIcon;
+  const chipClass = isOrg ? 'detail-org-chip' : 'detail-talent-chip';
+
+  const assigned  = options.filter(o => ids.includes(o.id));
+  const available = options.filter(o => !ids.includes(o.id));
+  const filtered  = available.filter(o => o.name.toLowerCase().includes(search.toLowerCase()));
+
+  useEffect(() => { setSelIdx(0); }, [search]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e) { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setSearch(''); } }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const remove = id => onChange(ids.filter(i => i !== id));
+  const add    = id => { onChange([...ids, id]); setSearch(''); setSelIdx(0); };
+
+  function handleKeyDown(e) {
+    if (e.key === 'Escape') { setOpen(false); setSearch(''); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSelIdx(i => Math.min(i + 1, filtered.length - 1)); return; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setSelIdx(i => Math.max(i - 1, 0)); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (filtered.length > 0) add(filtered[selIdx].id);
+      else if (search.trim()) { onCreate(search.trim()); setSearch(''); }
+      return;
+    }
+  }
+
+  return (
+    <div ref={ref} className="detail-link-picker">
+      <span className="detail-link-label">
+        <Icon />
+        <span>{label} :</span>
+      </span>
+      {assigned.map(item => (
+        <span key={item.id} className={chipClass}>
+          <span>{item.name}</span>
+          <span className="detail-link-chip-x" onClick={() => remove(item.id)}>×</span>
+        </span>
+      ))}
+      <button
+        className="detail-link-add"
+        onClick={() => { setOpen(v => !v); setSearch(''); }}
+      >+</button>
+      {open && (
+        <div className="detail-link-dropdown">
+          <input
+            autoFocus
+            className="detail-link-search"
+            placeholder={`Ajouter ${isOrg ? 'une marque' : 'un talent'}…`}
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+          <div className="detail-link-options">
+            {filtered.map((o, i) => (
+              <button
+                key={o.id}
+                className={`detail-link-opt${i === selIdx ? ' selected' : ''}`}
+                onClick={() => add(o.id)}
+              >
+                <Icon />
+                <span>{o.name}</span>
+              </button>
+            ))}
+            {filtered.length === 0 && search.trim() && (
+              <button
+                className="detail-link-opt detail-link-create"
+                onClick={() => { onCreate(search.trim()); setSearch(''); }}
+              >
+                + Créer « {search.trim()} »
+              </button>
+            )}
+            {filtered.length === 0 && !search.trim() && (
+              <div className="detail-link-empty">Aucun résultat</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function TodoDetailPanel({ todo, state, dispatch, createOrg, createTalent }) {
@@ -523,6 +635,26 @@ export default function TodoDetailPanel({ todo, state, dispatch, createOrg, crea
         placeholder="Ajoutez une note…"
         minRows={1}
       />
+
+      {/* ── Marques & Talents ──────────────────────────────────────────────── */}
+      <div className="detail-links-section">
+        <DetailLinkPicker
+          type="org"
+          label="Marque"
+          ids={todo.organizationIds || []}
+          options={state.organizations}
+          onChange={ids => update({ organizationIds: ids })}
+          onCreate={name => { const id = createOrg(name); update({ organizationIds: [...(todo.organizationIds || []), id] }); }}
+        />
+        <DetailLinkPicker
+          type="talent"
+          label="Talent"
+          ids={todo.talentIds || []}
+          options={state.talents}
+          onChange={ids => update({ talentIds: ids })}
+          onCreate={name => { const id = createTalent(name); update({ talentIds: [...(todo.talentIds || []), id] }); }}
+        />
+      </div>
 
     </div>
   );

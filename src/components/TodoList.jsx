@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { genId } from '../utils/id';
 import { playCompletionSound, playInProgressSound } from '../utils/sound';
@@ -20,10 +20,15 @@ const TalentIcon = () => (
 function FilterPicker({ value, options, onChange, type, placeholder }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [focusIdx, setFocusIdx] = useState(0);
   const ref = useRef(null);
+  const listRef = useRef(null);
 
   const selected = options.find(o => o.id === value) ?? null;
   const filtered  = options.filter(o => o.name.toLowerCase().includes(search.toLowerCase()));
+
+  // Reset focus index when search changes — always default to first item
+  useEffect(() => { setFocusIdx(0); }, [search]);
 
   useEffect(() => {
     if (!open) return;
@@ -32,31 +37,53 @@ function FilterPicker({ value, options, onChange, type, placeholder }) {
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
 
+  // Scroll focused item into view
+  useEffect(() => {
+    if (!listRef.current) return;
+    const items = listRef.current.querySelectorAll('.todo-chip-opt:not(.todo-chip-clear)');
+    if (items[focusIdx]) items[focusIdx].scrollIntoView({ block: 'nearest' });
+  }, [focusIdx]);
+
+  function handleKeyDown(e) {
+    if (e.key === 'Escape') { setOpen(false); return; }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setFocusIdx(i => Math.min(i + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setFocusIdx(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (filtered[focusIdx]) { onChange(filtered[focusIdx].id); setOpen(false); }
+    }
+  }
+
   return (
     <div ref={ref} className={`todo-filter-picker todo-filter-${type}`}>
       <button
         className={`todo-filter-btn${selected ? ' active' : ''}`}
-        onClick={() => { setOpen(v => !v); setSearch(''); }}
+        onClick={() => { setOpen(v => !v); setSearch(''); setFocusIdx(0); }}
       >
         {type === 'org' ? <OrgIcon /> : <TalentIcon />}
         <span>{selected ? selected.name : placeholder}</span>
-        {selected && (
-          <span className="todo-filter-x"
-            onMouseDown={e => e.stopPropagation()}
-            onClick={e => { e.stopPropagation(); onChange(null); setOpen(false); }}>×</span>
-        )}
       </button>
+      {selected && (
+        <span className="todo-filter-x"
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); onChange(null); setOpen(false); }}>×</span>
+      )}
       {open && (
         <div className="todo-chip-dropdown">
           <input autoFocus className="todo-chip-search" value={search}
             onChange={e => setSearch(e.target.value)}
-            onKeyDown={e => e.key === 'Escape' && setOpen(false)}
+            onKeyDown={handleKeyDown}
             placeholder="Rechercher…" onMouseDown={e => e.stopPropagation()} />
-          <div className="todo-chip-list">
+          <div className="todo-chip-list" ref={listRef}>
             {value && <div className="todo-chip-opt todo-chip-clear" onClick={() => { onChange(null); setOpen(false); }}>✕ Effacer</div>}
-            {filtered.map(opt => (
-              <div key={opt.id} className={`todo-chip-opt${opt.id === value ? ' todo-chip-selected' : ''}`}
-                onClick={() => { onChange(opt.id); setOpen(false); }}>{opt.name}</div>
+            {filtered.map((opt, i) => (
+              <div key={opt.id} className={`todo-chip-opt${opt.id === value ? ' todo-chip-selected' : ''}${i === focusIdx ? ' todo-chip-focused' : ''}`}
+                onClick={() => { onChange(opt.id); setOpen(false); }}
+                onMouseEnter={() => setFocusIdx(i)}>{opt.name}</div>
             ))}
             {filtered.length === 0 && <div className="todo-chip-empty-msg">Aucun résultat</div>}
           </div>
@@ -186,7 +213,6 @@ function StackPicker({ ids = [], options, onChange, onFilterClick, type }) {
         <span
           className={chipClass}
           title={onFilterClick ? `Filtrer par ${assigned[0].name}` : assigned[0].name}
-          data-tooltip={assigned[0].name}
           onMouseDown={e => e.stopPropagation()}
           onClick={e => { e.stopPropagation(); if (onFilterClick) onFilterClick(assigned[0].id); }}
         >
@@ -276,11 +302,14 @@ function StatusIcon({ status }) {
 function shortDate(iso) {
   if (!iso) return null;
   const d = new Date(iso);
-  const h = d.getHours(), m = d.getMinutes();
-  const dateStr = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-  return (h || m)
-    ? `${dateStr} ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`
-    : dateStr;
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dateStart  = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays   = Math.round((dateStart - todayStart) / 86400000);
+
+  if (diffDays === 0) return 'auj.';
+  if (diffDays === 1) return 'dem.';
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }).replace('.', '');
 }
 function isPast(iso) { return iso && new Date(iso) < new Date(); }
 
@@ -290,13 +319,22 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
   const [focusedIndex,   setFocusedIndex]   = useState(-1);
   const [anchorIndex,    setAnchorIndex]    = useState(null);
   const [cmdSet,         setCmdSet]         = useState(new Set());
-  const [hiddenStatuses, setHiddenStatuses] = useState(new Set());
-  const [bottomCollapsed, setBottomCollapsed] = useState(false);
+  const [hiddenStatuses,   setHiddenStatuses]   = useState(new Set());
+  const [hiddenPriorities, setHiddenPriorities] = useState(new Set());
+  const [newTaskText,      setNewTaskText]      = useState('');
   const [collapsedIds,   setCollapsedIds]   = useState(new Set());
-  const [draggedId,  setDraggedId]  = useState(null);
-  const [dragOverId, setDragOverId] = useState(null);
+  const [collapsedSections, setCollapsedSections] = useState(new Set());
+  const [draggedId,   setDraggedId]   = useState(null);
+  const [dragOverId,  setDragOverId]  = useState(null);
+  const [dragOverPos, setDragOverPos] = useState(null); // 'before' | 'after'
+  const dragOverRef   = useRef({ id: null, pos: null });
+  const dragRaf       = useRef(null);
+  const dragRowRects  = useRef([]);   // snapshot of row positions at drag start
   const [suggest,       setSuggest]       = useState(null);
   // suggest = { todoId, matches: [{type:'org'|'talent', item}], selIdx: 0 }
+  const [suggestTop,   setSuggestTop]   = useState(null);
+  const [topOrgIds,    setTopOrgIds]    = useState([]);
+  const [topTalentIds, setTopTalentIds] = useState([]);
   const [filterOrgId,    setFilterOrgId]    = useState(orgFilter);
   const [filterTalentId, setFilterTalentId] = useState(talentFilter);
 
@@ -309,7 +347,20 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
   const inputRefs      = useRef({});
   const listRef        = useRef(null);
   const initDone       = useRef(false);
-  const dragSelectRef  = useRef(false); // true pendant un cliquer-glisser de sélection
+  const dragSelectRef  = useRef(false);
+  const detailRef      = useRef(null);
+
+  // Auto-collapse sections when statuses are deselected
+  useEffect(() => {
+    setCollapsedSections(new Set(hiddenStatuses));
+  }, [hiddenStatuses.size]); // eslint-disable-line
+
+  // Status filter pills
+  const STATUS_PILLS = [
+    { status: 'pending',     label: 'À faire',    cls: 'todo-status-flag-pending'     },
+    { status: 'in-progress', label: 'En cours',   cls: 'todo-status-flag-in-progress' },
+    { status: 'done',        label: 'Terminées',  cls: 'todo-status-flag-done'        },
+  ];
 
   // todos = base list (all, or filtered by project)
   const todos = projectFilter
@@ -322,25 +373,169 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
     return idx >= 0 && idx < state.todos.length - 1 && state.todos[idx + 1].indent > state.todos[idx].indent;
   }
 
-  // visibleTodos: apply status filter + org/talent filters + collapse
-  const visibleTodos = (() => {
-    let base = hiddenStatuses.size > 0 ? todos.filter(t => !hiddenStatuses.has(t.status)) : todos;
+  // Expand IDs to include subtasks of any parent in the set
+  function expandWithSubtasks(ids) {
+    const idSet = new Set(ids);
+    for (let i = 0; i < state.todos.length; i++) {
+      if (idSet.has(state.todos[i].id) && state.todos[i].indent === 0) {
+        for (let j = i + 1; j < state.todos.length && state.todos[j].indent > 0; j++) {
+          idSet.add(state.todos[j].id);
+        }
+      }
+    }
+    return [...idSet];
+  }
+
+  // Helper: get the parent status for each task (subtasks inherit their parent's status for filtering)
+  function getParentStatus(todo, idx) {
+    if (todo.indent === 0) return todo.status;
+    // Walk backwards to find the parent (first task with lower indent)
+    const todoIdx = todos.indexOf(todo);
+    for (let i = todoIdx - 1; i >= 0; i--) {
+      if (todos[i].indent < todo.indent) return todos[i].indent === 0 ? todos[i].status : getParentStatus(todos[i], i);
+    }
+    return todo.status;
+  }
+
+  const [sortMode, setSortMode] = useState('manual'); // 'manual' | 'priority' | 'date' | 'status' | 'alpha'
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const sortRef = useRef(null);
+
+  // visibleTodos: all filtered todos in one list — hidden statuses appended at the bottom
+  // sectionHeaders: map of visibleTodos index → header info (rendered before that index)
+  const [visibleTodos, sectionHeaders] = (() => {
+    // Apply priority + org/talent filters to all todos
+    let base = [...todos];
+    if (hiddenPriorities.size > 0) {
+      // Only filter root tasks by priority — subtasks follow their parent
+      const filtered = [];
+      let keepChildren = true;
+      for (const t of base) {
+        if (t.indent === 0) {
+          keepChildren = !hiddenPriorities.has(t.priority ?? null);
+          if (keepChildren) filtered.push(t);
+        } else {
+          if (keepChildren) filtered.push(t);
+        }
+      }
+      base = filtered;
+    }
     if (filterOrgId)    base = base.filter(t => (t.organizationIds || []).includes(filterOrgId));
     if (filterTalentId) base = base.filter(t => (t.talentIds || []).includes(filterTalentId));
+
+    // Split into main (not hidden) and hidden-status groups
+    const main   = hiddenStatuses.size > 0 ? base.filter(t => !hiddenStatuses.has(getParentStatus(t))) : base;
+    const hidden = hiddenStatuses.size > 0 ? base.filter(t =>  hiddenStatuses.has(getParentStatus(t))) : [];
+
+    // Sort main tasks (by blocks: parent + children stay together)
+    let sorted = main;
+    if (sortMode !== 'manual') {
+      const mainBlocks = [];
+      let cur = null;
+      for (const t of main) {
+        if (t.indent === 0) { cur = { parent: t, children: [] }; mainBlocks.push(cur); }
+        else if (cur) { cur.children.push(t); }
+        else { mainBlocks.push({ parent: t, children: [] }); }
+      }
+      const PRIO_ORDER = { high: 0, medium: 1, low: 2 };
+      mainBlocks.sort((a, b) => {
+        if (sortMode === 'priority') {
+          const pa = PRIO_ORDER[a.parent.priority] ?? 3;
+          const pb = PRIO_ORDER[b.parent.priority] ?? 3;
+          return pa - pb;
+        }
+        if (sortMode === 'date') {
+          const da = a.parent.dueDate || '9999';
+          const db = b.parent.dueDate || '9999';
+          return da < db ? -1 : da > db ? 1 : 0;
+        }
+        if (sortMode === 'status') {
+          const STATUS_ORDER = { 'pending': 0, 'in-progress': 1, 'done': 2 };
+          const sa = STATUS_ORDER[a.parent.status] ?? 3;
+          const sb = STATUS_ORDER[b.parent.status] ?? 3;
+          return sa - sb;
+        }
+        if (sortMode === 'alpha') {
+          return (a.parent.text || '').localeCompare(b.parent.text || '', 'fr', { sensitivity: 'base' });
+        }
+        return 0;
+      });
+      sorted = mainBlocks.flatMap(b => [b.parent, ...b.children]);
+    }
+
+    // Apply collapse
     const result = [];
     let hideAbove = null;
-    for (const todo of base) {
-      if (hideAbove !== null) {
-        if (todo.indent > hideAbove) continue;
-        hideAbove = null;
-      }
+    for (const todo of sorted) {
+      if (hideAbove !== null) { if (todo.indent > hideAbove) continue; hideAbove = null; }
       result.push(todo);
       if (collapsedIds.has(todo.id)) hideAbove = todo.indent;
     }
-    return result;
-  })();
 
-  const bottomTodos   = hiddenStatuses.size > 0 ? todos.filter(t => hiddenStatuses.has(t.status)) : [];
+    // Append hidden statuses grouped by status (pending → in-progress → done)
+    const headers = []; // array of { atIndex, status, label, count }
+    if (hidden.length > 0) {
+      const STATUS_ORDER = { pending: 0, 'in-progress': 1, done: 2 };
+      const STATUS_LABELS = { pending: 'À faire', 'in-progress': 'En cours', done: 'Terminées' };
+      const blocks = [];
+      let currentBlock = null;
+      for (const t of hidden) {
+        if (t.indent === 0) { currentBlock = { parent: t, children: [] }; blocks.push(currentBlock); }
+        else if (currentBlock) { currentBlock.children.push(t); }
+        else { blocks.push({ parent: t, children: [] }); }
+      }
+      blocks.sort((a, b) => (STATUS_ORDER[a.parent.status] ?? 0) - (STATUS_ORDER[b.parent.status] ?? 0));
+
+      // Count tasks per status group (only indent-0 parents count)
+      const statusCounts = {};
+      for (const block of blocks) {
+        statusCounts[block.parent.status] = (statusCounts[block.parent.status] || 0) + 1;
+      }
+
+      let lastStatus = null;
+      for (const block of blocks) {
+        const st = block.parent.status;
+        if (st !== lastStatus) {
+          const count = statusCounts[st] || 0;
+          headers.push({ atIndex: result.length, status: st, label: STATUS_LABELS[st] || st, count });
+          lastStatus = st;
+        }
+        if (collapsedSections.has(st)) continue;
+        result.push(block.parent);
+        if (!collapsedIds.has(block.parent.id)) {
+          result.push(...block.children);
+        }
+      }
+    }
+
+    return [result, headers];
+  })();
+  // Keep focus on same task when it moves in the list (e.g. status change)
+  const focusedIdRef = useRef(null);
+
+  // Store focused ID on every user-driven focus change
+  useEffect(() => {
+    if (focusedIndex >= 0 && visibleTodos[focusedIndex]) {
+      focusedIdRef.current = visibleTodos[focusedIndex].id;
+    } else if (focusedIndex < 0) {
+      focusedIdRef.current = null;
+    }
+  }, [focusedIndex]); // eslint-disable-line
+
+  // When todos reorder (status/priority change), follow the task by ID
+  const visibleIdsStr = visibleTodos.map(t => t.id).join(',');
+  useEffect(() => {
+    if (!focusedIdRef.current || focusedIndex < 0) return;
+    const currentId = visibleTodos[focusedIndex]?.id;
+    if (currentId === focusedIdRef.current) return;
+    const newIdx = visibleTodos.findIndex(t => t.id === focusedIdRef.current);
+    if (newIdx !== -1) {
+      setFocusedIndex(newIdx);
+      setAnchorIndex(null);
+      setCmdSet(new Set());
+    }
+  }, [visibleIdsStr]); // eslint-disable-line — only re-run when the list order changes
+
   const focusedTodo   = visibleTodos[focusedIndex] ?? null;
   const parentTodos   = todos.filter(t => getHasSubtasks(t.id));
   const allCollapsed  = parentTodos.length > 0 && parentTodos.every(t => collapsedIds.has(t.id));
@@ -378,6 +573,23 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
     return false;
   }
 
+  // ── Click outside → deselect ─────────────────────────────────────────────
+  const layoutRef = useRef(null);
+  useEffect(() => {
+    function onDown(e) {
+      // Keep selection when clicking inside the task list, detail panel, or divider
+      if (e.target.closest('.todo-list')) return;
+      if (e.target.closest('.todo-detail-col')) return;
+      if (e.target.closest('.todo-divider')) return;
+      setFocusedIndex(-1);
+      setAnchorIndex(null);
+      setCmdSet(new Set());
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+  function handleLayoutMouseDown() { /* kept for future use */ }
+
   // ── Focus management ──────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -400,44 +612,66 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
   }
 
   function moveSelection(dir) {
-    const selIds   = getSelectedIds();
+    // Manual move overrides any active sort
+    if (sortMode !== 'manual') setSortMode('manual');
+    const selIds = getSelectedIds();
     if (!selIds.size) return;
-    const arr      = [...visibleTodos];
-    const selected = arr.filter(t => selIds.has(t.id));
-    const others   = arr.filter(t => !selIds.has(t.id));
+    const arr = [...visibleTodos];
     const focusedId = visibleTodos[focusedIndex]?.id;
 
-    if (dir === 'up') {
-      const firstSelIdx = arr.findIndex(t => selIds.has(t.id));
-      if (firstSelIdx <= 0) return;
-      // L'item juste au-dessus du groupe : on l'insère après le groupe
-      const pivot        = arr[firstSelIdx - 1];
-      const pivotInOthers = others.findIndex(t => t.id === pivot.id);
-      const next = [...others];
-      next.splice(pivotInOthers, 0, ...selected);
-      dispatch({ type: 'REORDER_TODOS', todos: mergeReorderedVisible(state.todos, next) });
-      const newFocusIdx = next.findIndex(t => t.id === focusedId);
-      if (newFocusIdx !== -1) setFocusedIndex(newFocusIdx);
-      // N'ancre dans cmdSet que si vraie multi-sélection
-      if (selIds.size > 1) setCmdSet(new Set(selIds));
-      else if (cmdSet.size > 0) setCmdSet(new Set());
-      setAnchorIndex(null);
-    } else {
-      const lastSelIdx = arr.reduce((a, t, i) => selIds.has(t.id) ? i : a, -1);
-      if (lastSelIdx >= arr.length - 1) return;
-      // L'item juste en-dessous du groupe : on l'insère avant le groupe
-      const pivot         = arr[lastSelIdx + 1];
-      const pivotInOthers = others.findIndex(t => t.id === pivot.id);
-      const next = [...others];
-      next.splice(pivotInOthers + 1, 0, ...selected);
-      dispatch({ type: 'REORDER_TODOS', todos: mergeReorderedVisible(state.todos, next) });
-      const newFocusIdx = next.findIndex(t => t.id === focusedId);
-      if (newFocusIdx !== -1) setFocusedIndex(newFocusIdx);
-      // N'ancre dans cmdSet que si vraie multi-sélection
-      if (selIds.size > 1) setCmdSet(new Set(selIds));
-      else if (cmdSet.size > 0) setCmdSet(new Set());
-      setAnchorIndex(null);
+    // Expand selection to include subtasks of selected parents
+    const expandedSelIds = new Set(selIds);
+    for (let i = 0; i < arr.length; i++) {
+      if (selIds.has(arr[i].id) && arr[i].indent === 0) {
+        for (let j = i + 1; j < arr.length && arr[j].indent > 0; j++) {
+          expandedSelIds.add(arr[j].id);
+        }
+      }
     }
+
+    const selected = arr.filter(t => expandedSelIds.has(t.id));
+    const others   = arr.filter(t => !expandedSelIds.has(t.id));
+    if (!others.length) return;
+
+    if (dir === 'up') {
+      const firstSelIdx = arr.findIndex(t => expandedSelIds.has(t.id));
+      if (firstSelIdx <= 0) return;
+      // Find the start of the block just above (walk up past subtasks to parent)
+      let aboveIdx = firstSelIdx - 1;
+      while (aboveIdx > 0 && arr[aboveIdx].indent > 0) aboveIdx--;
+      // Insert selected just before that block in the others array
+      const aboveId = arr[aboveIdx].id;
+      const insertAt = others.findIndex(t => t.id === aboveId);
+      if (insertAt === -1) return;
+      const next = [...others];
+      next.splice(insertAt, 0, ...selected);
+
+      dispatch({ type: 'REORDER_TODOS', todos: mergeReorderedVisible(state.todos, next) });
+      const newFocusIdx = next.findIndex(t => t.id === focusedId);
+      if (newFocusIdx !== -1) setFocusedIndex(newFocusIdx);
+    } else {
+      const lastSelIdx = arr.reduce((a, t, i) => expandedSelIds.has(t.id) ? i : a, -1);
+      if (lastSelIdx >= arr.length - 1) return;
+      // Find the end of the block just below (walk down past subtasks)
+      let belowIdx = lastSelIdx + 1;
+      if (arr[belowIdx].indent === 0) {
+        while (belowIdx + 1 < arr.length && arr[belowIdx + 1].indent > 0) belowIdx++;
+      }
+      // Insert selected just after that block in the others array
+      const belowId = arr[belowIdx].id;
+      const insertAfter = others.findIndex(t => t.id === belowId);
+      if (insertAfter === -1) return;
+      const next = [...others];
+      next.splice(insertAfter + 1, 0, ...selected);
+
+      dispatch({ type: 'REORDER_TODOS', todos: mergeReorderedVisible(state.todos, next) });
+      const newFocusIdx = next.findIndex(t => t.id === focusedId);
+      if (newFocusIdx !== -1) setFocusedIndex(newFocusIdx);
+    }
+
+    if (selIds.size > 1) setCmdSet(new Set(selIds));
+    else if (cmdSet.size > 0) setCmdSet(new Set());
+    setAnchorIndex(null);
   }
 
   // ── Keyboard ──────────────────────────────────────────────────────────────
@@ -501,7 +735,7 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
       e.preventDefault();
       const newId    = genId();
       const globalIdx = state.todos.findIndex(t => t.id === todo.id);
-      dispatch({ type: 'ADD_TODO', id: newId, text: '', indent: todo.indent, insertAt: globalIdx + 1, projectId: projectFilter });
+      dispatch({ type: 'ADD_TODO', id: newId, text: '', indent: todo.indent, insertAt: globalIdx + 1, projectId: projectFilter, priority: todo.priority });
       setTimeout(() => {
         setFocusedIndex(idx + 1); setAnchorIndex(null); setCmdSet(new Set());
         if (inputRefs.current[newId]) inputRefs.current[newId].focus();
@@ -510,7 +744,7 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
     }
     if (key === 'Backspace' && shiftKey) {
       e.preventDefault();
-      const ids = [...getSelectedIds()];
+      const ids = expandWithSubtasks([...getSelectedIds()]);
       const firstIdx = visibleTodos.findIndex(t => ids.includes(t.id));
       dispatch({ type: 'DELETE_TODOS', ids });
       setFocusedIndex(Math.max(0, firstIdx - 1)); setAnchorIndex(null); setCmdSet(new Set());
@@ -518,7 +752,7 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
     }
     if (key === 'Backspace' && todo.text === '') {
       e.preventDefault();
-      dispatch({ type: 'DELETE_TODOS', ids: [todo.id] });
+      dispatch({ type: 'DELETE_TODOS', ids: expandWithSubtasks([todo.id]) });
       setFocusedIndex(Math.max(0, idx - 1)); setAnchorIndex(null); setCmdSet(new Set());
       return;
     }
@@ -551,6 +785,7 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
         indent: todo.indent,
         insertAt: globalIdx + 1 + i,
         projectId: projectFilter,
+        priority: todo.priority,
       });
     });
 
@@ -620,6 +855,7 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
     setFocusedIndex(idx);
     setAnchorIndex(idx);
     setCmdSet(new Set());
+    setBottomFocusedId(null);
   }
 
   // Étend la sélection au survol pendant le drag
@@ -712,6 +948,54 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
     }, 0);
   }
 
+  // ── Top-input autocomplete ───────────────────────────────────────────────
+  function handleTopInputChange(newText) {
+    setNewTaskText(newText);
+    const nextOrgIds    = new Set(topOrgIds);
+    const nextTalentIds = new Set(topTalentIds);
+    for (const org of state.organizations) {
+      if (nextOrgIds.has(org.id)) continue;
+      const re = new RegExp(`(^|\\s)${escRe(org.name)}(\\s|$)`, 'i');
+      if (re.test(newText)) { nextOrgIds.add(org.id); break; }
+    }
+    for (const talent of state.talents) {
+      if (nextTalentIds.has(talent.id)) continue;
+      const re = new RegExp(`(^|\\s)${escRe(talent.name)}(\\s|$)`, 'i');
+      if (re.test(newText)) { nextTalentIds.add(talent.id); break; }
+    }
+    setTopOrgIds([...nextOrgIds]);
+    setTopTalentIds([...nextTalentIds]);
+    const lastWord = newText.trimEnd().split(/\s+/).pop() ?? '';
+    if (lastWord.length >= 3) {
+      const q = lastWord.toLowerCase();
+      const matches = [
+        ...state.organizations.filter(o => !nextOrgIds.has(o.id) && o.name.toLowerCase().startsWith(q)).map(o => ({ type: 'org', item: o })),
+        ...state.talents.filter(t => !nextTalentIds.has(t.id) && t.name.toLowerCase().startsWith(q)).map(t => ({ type: 'talent', item: t })),
+      ];
+      setSuggestTop(matches.length > 0 ? { matches, selIdx: 0 } : null);
+    } else {
+      setSuggestTop(null);
+    }
+  }
+
+  function applyTopSuggest(match) {
+    const trimmed   = newTaskText.trimEnd();
+    const lastSpace = trimmed.lastIndexOf(' ');
+    const prefix    = lastSpace >= 0 ? trimmed.slice(0, lastSpace + 1) : '';
+    const newText   = prefix + match.item.name + ' ';
+    setNewTaskText(newText);
+    if (match.type === 'org') {
+      setTopOrgIds(prev => [...new Set([...prev, match.item.id])]);
+    } else {
+      setTopTalentIds(prev => [...new Set([...prev, match.item.id])]);
+    }
+    setSuggestTop(null);
+    setTimeout(() => {
+      const el = document.querySelector('.todo-add-top-input');
+      if (el) { el.focus(); el.setSelectionRange(newText.length, newText.length); }
+    }, 0);
+  }
+
   // ── Drag-and-drop reorder ─────────────────────────────────────────────────
 
   function handleGripDragStart(e, id) {
@@ -723,31 +1007,77 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
       setCmdSet(new Set());
       setAnchorIndex(null);
     }
+    // Snapshot row positions before any margins are added
+    if (listRef.current) {
+      const rows = listRef.current.querySelectorAll('.todo-row');
+      const allSelIds = new Set(getSelectedIds());
+      allSelIds.add(id);
+      dragRowRects.current = Array.from(rows).map(r => {
+        const rect = r.getBoundingClientRect();
+        const rowId = r.dataset.todoId;
+        return { id: rowId, top: rect.top, bottom: rect.bottom, mid: rect.top + rect.height / 2, skip: allSelIds.has(rowId) };
+      }).filter(r => !r.skip);
+    }
     setDraggedId(id);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', id);
   }
   function handleGripDragEnd() {
+    if (dragRaf.current) cancelAnimationFrame(dragRaf.current);
+    dragOverRef.current = { id: null, pos: null };
     setDraggedId(null);
     setDragOverId(null);
+    setDragOverPos(null);
   }
-  function handleRowDragOver(e, id) {
+  function handleListDragOver(e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    const selIds = getSelectedIds();
-    if (!selIds.has(id)) setDragOverId(id);
+    if (!draggedId || dragRowRects.current.length === 0) return;
+    const y = e.clientY;
+    // Find which original row the cursor is closest to
+    let targetId = null;
+    let pos = 'after';
+    for (let i = 0; i < dragRowRects.current.length; i++) {
+      const r = dragRowRects.current[i];
+      if (y < r.mid) {
+        targetId = r.id;
+        pos = 'before';
+        break;
+      }
+      targetId = r.id;
+      pos = 'after';
+    }
+    if (!targetId) return;
+    if (dragOverRef.current.id === targetId && dragOverRef.current.pos === pos) return;
+    dragOverRef.current = { id: targetId, pos };
+    if (dragRaf.current) cancelAnimationFrame(dragRaf.current);
+    dragRaf.current = requestAnimationFrame(() => {
+      setDragOverId(targetId);
+      setDragOverPos(pos);
+    });
   }
-  function handleRowDragLeave() {
-    setDragOverId(null);
+  function handleListDragLeave(e) {
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      dragOverRef.current = { id: null, pos: null };
+      setDragOverId(null);
+      setDragOverPos(null);
+    }
   }
   function handleRowDrop(e, targetId) {
     e.preventDefault();
-    if (!draggedId || draggedId === targetId) { setDraggedId(null); setDragOverId(null); return; }
+    // Manual move overrides any active sort
+    if (sortMode !== 'manual') setSortMode('manual');
+    // Use the tracked dragOverId instead of the event target (may differ due to margins)
+    const effectiveTarget = dragOverId || targetId;
+    const effectivePos = dragOverPos || 'after';
+    if (!draggedId || draggedId === effectiveTarget) { handleGripDragEnd(); return; }
+    targetId = effectiveTarget;
+    if (!draggedId || draggedId === targetId) { handleGripDragEnd(); return; }
 
     const arr        = [...visibleTodos];
     const draggedPos = arr.findIndex(t => t.id === draggedId);
     const targetPos  = arr.findIndex(t => t.id === targetId);
-    if (draggedPos === -1 || targetPos === -1) { setDraggedId(null); setDragOverId(null); return; }
+    if (draggedPos === -1 || targetPos === -1) { setDraggedId(null); setDragOverId(null); setDragOverPos(null); return; }
 
     // Déplacer tout le groupe sélectionné
     const selIds   = new Set(getSelectedIds());
@@ -756,20 +1086,25 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
     const others   = arr.filter(t => !selIds.has(t.id));
 
     const targetInOthers = others.findIndex(t => t.id === targetId);
-    if (targetInOthers === -1) { setDraggedId(null); setDragOverId(null); return; }
+    if (targetInOthers === -1) { setDraggedId(null); setDragOverId(null); setDragOverPos(null); return; }
 
-    const insertAt = draggedPos > targetPos ? targetInOthers : targetInOthers + 1;
+    const insertAt = effectivePos === 'before' ? targetInOthers : targetInOthers + 1;
     const next = [...others];
     next.splice(insertAt, 0, ...selected);
 
+    // Reset drag state first so the re-render from dispatch doesn't show stale drag indicators
+    if (dragRaf.current) cancelAnimationFrame(dragRaf.current);
+    dragOverRef.current = { id: null, pos: null };
+    setDraggedId(null);
+    setDragOverId(null);
+    setDragOverPos(null);
+    // Then reorder
     dispatch({ type: 'REORDER_TODOS', todos: mergeReorderedVisible(state.todos, next) });
     const newFocusIdx = next.findIndex(t => t.id === draggedId);
     if (newFocusIdx !== -1) setFocusedIndex(newFocusIdx);
     if (selIds.size > 1) setCmdSet(new Set(selIds));
     else if (cmdSet.size > 0) setCmdSet(new Set());
     setAnchorIndex(null);
-    setDraggedId(null);
-    setDragOverId(null);
   }
 
   // ── Resize ────────────────────────────────────────────────────────────────
@@ -827,15 +1162,34 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
 
   // ── Counts ────────────────────────────────────────────────────────────────
 
-  const pendingCount   = todos.filter(t => t.status !== 'done').length;
+  const visibleCount   = visibleTodos.filter(t => t.status !== 'done').length;
   const completedCount = todos.filter(t => t.status === 'done').length;
   const filterProject  = projectFilter ? state.projects.find(p => p.id === projectFilter) : null;
-  const pageTitle      = filterProject ? `📊 ${filterProject.number}` : '✅ Toutes les tâches';
+  const defaultTitle   = filterProject ? `📊 ${filterProject.number}` : '✅ Toutes les tâches';
+  const [customTitle, setCustomTitle] = useState(() => localStorage.getItem('crm_list_title') || '');
+  const [editingTitle, setEditingTitle] = useState(false);
+  const pageTitle = customTitle || defaultTitle;
+
+  // Close sort menu on outside click
+  useEffect(() => {
+    if (!sortMenuOpen) return;
+    function onDown(e) { if (sortRef.current && !sortRef.current.contains(e.target)) setSortMenuOpen(false); }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [sortMenuOpen]);
+
+  function handleTitleSave(val) {
+    const trimmed = val.trim();
+    setCustomTitle(trimmed);
+    if (trimmed) localStorage.setItem('crm_list_title', trimmed);
+    else localStorage.removeItem('crm_list_title');
+    setEditingTitle(false);
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="todo-layout">
+    <div className="todo-layout" onMouseDown={handleLayoutMouseDown}>
 
       {/* ── Left column: list ──────────────────────────────────────────── */}
       <div className="todo-list-col" style={{ flex: 1, minWidth: 250 }}>
@@ -843,19 +1197,138 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
         {/* Header */}
         <div className="todo-col-header">
           <div className="todo-col-title-row">
-            <h1 className="page-title">{pageTitle}</h1>
-            <span className="page-count">{pendingCount}</span>
+            <div className="todo-title-left">
+              {editingTitle ? (
+                <input
+                  autoFocus
+                  className="page-title-input"
+                  defaultValue={pageTitle}
+                  onBlur={e => handleTitleSave(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') handleTitleSave(e.target.value);
+                    if (e.key === 'Escape') setEditingTitle(false);
+                  }}
+                />
+              ) : (
+                <h1 className="page-title" onClick={() => setEditingTitle(true)} title="Cliquer pour renommer">
+                  {pageTitle}
+                </h1>
+              )}
+              <span className="page-count">{visibleCount}</span>
+            </div>
+            <div className="todo-title-actions">
+            {/* Sort button */}
+            <div className="todo-sort-wrap" ref={sortRef}>
+              <button
+                className={`todo-sort-btn${sortMode !== 'manual' ? ' active' : ''}`}
+                onClick={() => setSortMenuOpen(v => !v)}
+                title="Trier"
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 4h12"/>
+                  <path d="M4 8h8"/>
+                  <path d="M6 12h4"/>
+                </svg>
+                <span className="todo-sort-label">
+                  {sortMode === 'priority' ? 'Priorité' : sortMode === 'date' ? 'Date' : sortMode === 'status' ? 'Statut' : 'Manuel'}
+                </span>
+              </button>
+              {sortMenuOpen && (
+                <div className="todo-sort-menu">
+                  {[
+                    { mode: 'priority', label: 'Priorité', icon: (
+                      <svg width="12" height="14" viewBox="0 0 10 12" fill="none">
+                        <path d="M1.5 11V1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        <path d="M1.5 2H8.5L6.5 5L8.5 8H1.5V2Z" fill="currentColor"/>
+                      </svg>
+                    )},
+                    { mode: 'date', label: "Date d'échéance", icon: (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <path fillRule="evenodd" d="M3,8L3,16C3,18.761423999999998,5.2385762,21,8,21L16,21C18.761423999999998,21,21,18.761423999999998,21,16L21,8C21,5.2385762,18.761423999999998,3,16,3L8,3C5.2385762,3,3,5.2385762,3,8ZM5.5251262,18.474871999999998Q4.5,17.449745,4.5,16L4.5,8L19.5,8L19.5,16Q19.5,17.449742999999998,18.474871999999998,18.474871999999998Q17.449742999999998,19.5,16,19.5L8,19.5Q6.550254600000001,19.5,5.5251262,18.474871999999998ZM19.174026,6.5Q18.921929,5.9721839,18.474871999999998,5.5251262Q17.449745,4.5,16,4.5L8,4.5Q6.5502524,4.5,5.5251262,5.5251262Q5.0780674999999995,5.9721849,4.8259716,6.5L19.174026,6.5ZM7.583333,10.5L8.4166665,10.5L8.4166665,12.166666L7.583333,12.166666ZM11.583333,10.5L12.416666,10.5L12.416666,12.166666L11.583333,12.166666ZM15.583333,10.5L16.416666,10.5L16.416666,12.166666L15.583333,12.166666ZM7.583333,14.5L8.4166665,14.5L8.4166665,16.166666L7.583333,16.166666ZM11.583333,14.5L12.416666,14.5L12.416666,16.166666L11.583333,16.166666Z"/>
+                      </svg>
+                    )},
+                    { mode: 'status', label: 'Statut', icon: (
+                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="1.5" y="1.5" width="13" height="13" rx="3"/>
+                        <path d="M5 8.5L7 10.5L11 5.5"/>
+                      </svg>
+                    )},
+                    { mode: 'manual', label: 'Manuel', icon: (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/>
+                        <path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v6"/>
+                        <path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/>
+                        <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.4L3.3 16.8a2 2 0 0 1 3-2.5L8 16"/>
+                      </svg>
+                    )},
+                  ].map(opt => (
+                    <button
+                      key={opt.mode}
+                      className={`todo-sort-opt${sortMode === opt.mode ? ' selected' : ''}`}
+                      onClick={() => { setSortMode(opt.mode); setSortMenuOpen(false); }}
+                    >
+                      <span className="todo-sort-opt-icon">{opt.icon}</span>
+                      <span>{opt.label}</span>
+                      {sortMode === opt.mode && (
+                        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                          <path d="M2 6.5L4.5 9L10 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {parentTodos.length > 0 && (
+              <button className="todo-expand-all-btn" onClick={toggleAll} title={allCollapsed ? 'Développer tout' : 'Réduire tout'}>
+                {allCollapsed ? (
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 6L8 2L12 6"/>
+                    <path d="M4 10L8 14L12 10"/>
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 2L8 6L12 2"/>
+                    <path d="M4 14L8 10L12 14"/>
+                  </svg>
+                )}
+              </button>
+            )}
+            </div>
           </div>
           <div className="todo-col-header-bottom">
             <div className="todo-status-pills">
+              {/* Filtres priorité */}
               {[
-                { status: 'pending',     label: 'À faire' },
-                { status: 'in-progress', label: 'En cours' },
-                { status: 'done',        label: 'Terminées' },
-              ].map(({ status, label }) => (
+                { priority: 'high',   color: '#D52B25', cls: 'prio-high',   label: 'Priorité élevée' },
+                { priority: 'medium', color: '#FAA80C', cls: 'prio-medium', label: 'Priorité moyenne' },
+                { priority: 'low',    color: '#4772FB', cls: 'prio-low',    label: 'Priorité faible'  },
+                { priority: null,     color: '#888',    cls: 'prio-none',   label: 'Sans priorité'    },
+              ].map(({ priority, color, cls, label }) => (
+                <button
+                  key={String(priority)}
+                  className={`todo-priority-flag ${cls}${!hiddenPriorities.has(priority) ? ' active' : ''}`}
+                  style={{ color }}
+                  title={label}
+                  onClick={() => setHiddenPriorities(prev => {
+                    const next = new Set(prev);
+                    next.has(priority) ? next.delete(priority) : next.add(priority);
+                    return next;
+                  })}
+                >
+                  <svg width="10" height="12" viewBox="0 0 10 12" fill="none">
+                    <path d="M1.5 11V1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    <path d="M1.5 2H8.5L6.5 5L8.5 8H1.5V2Z" fill="currentColor"/>
+                  </svg>
+                </button>
+              ))}
+              <div className="todo-priority-sep" />
+              {/* Filtre statut — pastilles toggle */}
+              {STATUS_PILLS.map(({ status, label, cls }) => (
                 <button
                   key={status}
-                  className={`todo-status-pill todo-status-pill-${status}${!hiddenStatuses.has(status) ? ' active' : ''}`}
+                  className={`todo-status-flag ${cls}${!hiddenStatuses.has(status) ? ' active' : ''}`}
+                  title={label}
                   onClick={() => setHiddenStatuses(prev => {
                     const next = new Set(prev);
                     next.has(status) ? next.delete(status) : next.add(status);
@@ -870,47 +1343,113 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
             <div className="todo-header-right">
               <FilterPicker type="org"    value={filterOrgId}    options={state.organizations} onChange={setFilterOrgId}    placeholder="Marque" />
               <FilterPicker type="talent" value={filterTalentId} options={state.talents}       onChange={setFilterTalentId} placeholder="Talent" />
-              {parentTodos.length > 0 && (
-                <button className="todo-expand-all-btn" onClick={toggleAll}>
-                  {allCollapsed ? 'Développer tout' : 'Réduire tout'}
-                </button>
-              )}
             </div>
           </div>
         </div>
 
         {/* Task list */}
-        <div className="todo-list" ref={listRef}>
-          {visibleTodos.length === 0 && (
+        <div className="todo-list" ref={listRef} onDragOver={handleListDragOver} onDragLeave={handleListDragLeave} onDrop={e => { if (dragOverId) handleRowDrop(e, dragOverId); }}>
+          {/* Inline add field */}
+          <div className="todo-add-top">
+            <span className="todo-add-top-icon">+</span>
+            <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+              <input
+                className="todo-add-top-input"
+                placeholder="Ajouter une tâche…"
+                value={newTaskText}
+                onChange={e => handleTopInputChange(e.target.value)}
+                onBlur={() => setTimeout(() => setSuggestTop(null), 150)}
+                onKeyDown={e => {
+                  if (suggestTop) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); setSuggestTop(s => ({ ...s, selIdx: Math.min(s.selIdx + 1, s.matches.length - 1) })); return; }
+                    if (e.key === 'ArrowUp')   { e.preventDefault(); setSuggestTop(s => ({ ...s, selIdx: Math.max(s.selIdx - 1, 0) })); return; }
+                    if (e.key === 'Enter')     { e.preventDefault(); applyTopSuggest(suggestTop.matches[suggestTop.selIdx]); return; }
+                    if (e.key === 'Escape')    { setSuggestTop(null); return; }
+                  }
+                  if (e.key === 'Enter' && newTaskText.trim()) {
+                    const newId = genId();
+                    dispatch({
+                      type: 'ADD_TODO', id: newId, text: newTaskText.trim(), indent: 0, insertAt: 0, projectId: projectFilter,
+                      organizationIds: topOrgIds.length > 0 ? topOrgIds : undefined,
+                      talentIds: topTalentIds.length > 0 ? topTalentIds : undefined,
+                    });
+                    setNewTaskText(''); setTopOrgIds([]); setTopTalentIds([]); setSuggestTop(null);
+                    setTimeout(() => {
+                      setFocusedIndex(0);
+                      setAnchorIndex(null); setCmdSet(new Set());
+                      if (inputRefs.current[newId]) inputRefs.current[newId].focus();
+                    }, 0);
+                  }
+                  if (e.key === 'Escape') { setNewTaskText(''); setTopOrgIds([]); setTopTalentIds([]); setSuggestTop(null); e.target.blur(); }
+                }}
+              />
+              {suggestTop && (
+                <div className="todo-autocomplete">
+                  {suggestTop.matches.map((m, i) => (
+                    <div key={m.item.id} className={`todo-ac-opt${i === suggestTop.selIdx ? ' todo-ac-active' : ''}`}
+                      onMouseDown={e => e.preventDefault()} onClick={() => applyTopSuggest(m)}>
+                      <span className={`todo-ac-icon ${m.type}`}>
+                        {m.type === 'org'
+                          ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="15" rx="1"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+                          : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+                        }
+                      </span>
+                      {m.item.name}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {visibleTodos.length === 0 && !newTaskText && (
             <p className="todo-empty">Aucune tâche.</p>
           )}
 
           {visibleTodos.map((todo, idx) => {
+            const hdrsAtIdx = sectionHeaders.filter(h => h.atIndex === idx);
             const chips    = getChips(todo);
             const dateChip = shortDate(todo.dueDate);
             const past     = isPast(todo.dueDate) && todo.status !== 'done';
+            const dateTomorrow = (() => {
+              if (!todo.dueDate) return false;
+              const d = new Date(todo.dueDate), now = new Date();
+              const ds = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+              const ns = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+              return Math.round((ds - ns) / 86400000) === 1;
+            })();
+            const dateFuture = (() => {
+              if (!todo.dueDate) return false;
+              const d = new Date(todo.dueDate), now = new Date();
+              const ds = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+              const ns = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+              return Math.round((ds - ns) / 86400000) > 1;
+            })();
 
-            return (
+            const row = (
               <div
                 key={todo.id}
                 className={[
                   'todo-row',
                   isHighlighted(idx) ? 'todo-selected' : '',
                   focusedIndex === idx ? 'todo-focused' : '',
-                  todo.status === 'done' ? 'todo-done' : '',
+                  todo.status === 'done' ? 'todo-done' : todo.status === 'in-progress' ? 'todo-in-progress' : '',
                   draggedId  === todo.id ? 'todo-dragging'  : '',
-                  dragOverId === todo.id ? 'todo-drag-over' : '',
+                  (dragOverId === todo.id && dragOverPos === 'before') ? 'todo-drag-before' : '',
+                  (dragOverId === todo.id && dragOverPos === 'after')  ? 'todo-drag-after'  : '',
                   todo.indent > 0 ? 'todo-subtask' : '',
                   (todo.indent === 0 && getHasSubtasks(todo.id) && !collapsedIds.has(todo.id)) ? 'todo-parent-expanded' : '',
                   (todo.indent > 0 && (!visibleTodos[idx + 1] || visibleTodos[idx + 1].indent === 0)) ? 'todo-subtask-last' : '',
                 ].filter(Boolean).join(' ')}
-                style={{ paddingLeft: `${12 + todo.indent * 28}px` }}
+                style={{ paddingLeft: `${28 + todo.indent * 28}px` }}
+                data-todo-id={todo.id}
                 onMouseDown={e => handleTaskMouseDown(e, idx)}
                 onMouseEnter={() => handleRowMouseEnter(idx)}
-                onDragOver={e => handleRowDragOver(e, todo.id)}
-                onDragLeave={handleRowDragLeave}
                 onDrop={e => handleRowDrop(e, todo.id)}
               >
+                {/* Line number */}
+                <span className="todo-line-num">{idx + 1}</span>
+
                 {/* Drag grip */}
                 <span
                   className="todo-drag-handle"
@@ -938,10 +1477,17 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
                     onClick={e => { e.stopPropagation(); toggleCollapse(todo.id); }}
                     tabIndex={-1}
                   >
-                    <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"
-                      style={{ transform: collapsedIds.has(todo.id) ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.15s' }}>
-                      <path d="M2 1l4 3-4 3V1z"/>
-                    </svg>
+                    {collapsedIds.has(todo.id) ? (
+                      /* Réduit : chevron pointe vers la droite */
+                      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M6 3L11 8L6 13"/>
+                      </svg>
+                    ) : (
+                      /* Développé : chevron pointe vers le bas */
+                      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 6L8 11L13 6"/>
+                      </svg>
+                    )}
                   </button>
                 ) : (
                   <span className="todo-collapse-spacer" />
@@ -979,7 +1525,23 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
                     onKeyDown={e => handleKeyDown(e, idx)}
                     onPaste={e => handlePaste(e, idx)}
                     onFocus={() => { if (focusedIndex !== idx) setFocusedIndex(idx); }}
-                    onBlur={() => setTimeout(() => setSuggest(null), 150)}
+                    onBlur={() => {
+                      setTimeout(() => setSuggest(null), 150);
+                      // Auto-delete empty tasks (unless parent with non-empty subtasks)
+                      setTimeout(() => {
+                        if (todo.text.trim() !== '') return;
+                        if (todo.indent === 0) {
+                          // Check if has non-empty subtasks
+                          const tIdx = state.todos.findIndex(t => t.id === todo.id);
+                          if (tIdx !== -1) {
+                            for (let i = tIdx + 1; i < state.todos.length && state.todos[i].indent > 0; i++) {
+                              if (state.todos[i].text.trim() !== '') return; // keep parent
+                            }
+                          }
+                        }
+                        dispatch({ type: 'DELETE_TODOS', ids: [todo.id] });
+                      }, 200);
+                    }}
                     tabIndex={0}
                     style={{ width: '100%' }}
                   />
@@ -1005,10 +1567,10 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
                   )}
                 </div>
 
-                {/* Chips (date, project) */}
+                {/* Date label (text only) */}
                 {dateChip && (
-                  <span className={`todo-date-chip ${past ? 'todo-date-overdue' : ''}`}>
-                    📅 {dateChip}
+                  <span className={`todo-date-label${past ? ' todo-date-overdue' : dateTomorrow ? ' todo-date-tomorrow' : dateFuture ? ' todo-date-future' : ''}`}>
+                    {dateChip}
                   </span>
                 )}
                 {chips.map((label, i) => (
@@ -1039,91 +1601,71 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
                 </div>
               </div>
             );
+
+            if (hdrsAtIdx.length > 0) {
+              return (
+                <React.Fragment key={todo.id}>
+                  {hdrsAtIdx.map(h => (
+                    <div
+                      key={`section-${h.status}`}
+                      className={`todo-section-hdr todo-section-hdr-${h.status}`}
+                      onClick={() => setCollapsedSections(prev => {
+                        const next = new Set(prev);
+                        next.has(h.status) ? next.delete(h.status) : next.add(h.status);
+                        return next;
+                      })}
+                    >
+                      {collapsedSections.has(h.status) ? (
+                        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M6 3L11 8L6 13"/>
+                        </svg>
+                      ) : (
+                        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 6L8 11L13 6"/>
+                        </svg>
+                      )}
+                      <StatusIcon status={h.status} />
+                      <span>{h.label}</span>
+                      <span className="todo-section-count">{h.count}</span>
+                    </div>
+                  ))}
+                  {row}
+                </React.Fragment>
+              );
+            }
+            return row;
           })}
 
-          <button
-            className="todo-add-btn"
-            onClick={() => {
-              const newId = genId();
-              dispatch({ type: 'ADD_TODO', id: newId, text: '', indent: 0, insertAt: state.todos.length, projectId: projectFilter });
-              setTimeout(() => {
-                setFocusedIndex(visibleTodos.length);
-                setAnchorIndex(null); setCmdSet(new Set());
-                if (inputRefs.current[newId]) inputRefs.current[newId].focus();
-              }, 0);
-            }}
-          >
-            + Ajouter une tâche
-          </button>
+          {/* Headers for collapsed sections (no tasks rendered after them) */}
+          {sectionHeaders
+            .filter(h => h.atIndex >= visibleTodos.length)
+            .map(hdr => (
+              <div
+                key={`section-${hdr.status}`}
+                className={`todo-section-hdr todo-section-hdr-${hdr.status}`}
+                onClick={() => setCollapsedSections(prev => {
+                  const next = new Set(prev);
+                  next.has(hdr.status) ? next.delete(hdr.status) : next.add(hdr.status);
+                  return next;
+                })}
+              >
+                {collapsedSections.has(hdr.status) ? (
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6 3L11 8L6 13"/>
+                  </svg>
+                ) : (
+                  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 6L8 11L13 6"/>
+                  </svg>
+                )}
+                <StatusIcon status={hdr.status} />
+                <span>{hdr.label}</span>
+                <span className="todo-section-count">{hdr.count}</span>
+              </div>
+            ))}
+
         </div>
 
-        {/* Bottom section: tasks with hidden statuses */}
-        {bottomTodos.length > 0 && (
-          <div className="todo-bottom-section">
-            <button className="todo-bottom-toggle" onClick={() => setBottomCollapsed(v => !v)}>
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"
-                style={{ transform: bottomCollapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.15s' }}>
-                <path d="M2 1l4 3-4 3V1z"/>
-              </svg>
-              {bottomTodos.length} tâche{bottomTodos.length > 1 ? 's' : ''} masquée{bottomTodos.length > 1 ? 's' : ''}
-            </button>
-            {!bottomCollapsed && (
-              <div className="todo-bottom-list">
-                {[
-                  { status: 'pending',     label: 'À faire' },
-                  { status: 'in-progress', label: 'En cours' },
-                  { status: 'done',        label: 'Terminées' },
-                ]
-                  .filter(g => hiddenStatuses.has(g.status))
-                  .map(g => {
-                    const group = bottomTodos.filter(t => t.status === g.status);
-                    if (group.length === 0) return null;
-                    return (
-                      <div key={g.status} className="todo-bottom-group">
-                        <div className={`todo-bottom-group-hdr todo-bottom-group-hdr-${g.status}`}>
-                          <StatusIcon status={g.status} />
-                          <span>{g.label}</span>
-                        </div>
-                        {group.map(todo => (
-                          <div
-                            key={todo.id}
-                            className={`todo-bottom-row${todo.status === 'done' ? ' todo-done' : ''}`}
-                            style={{ paddingLeft: `${12 + todo.indent * 28}px` }}
-                          >
-                            {/* invisible spacers to align checkbox with main list */}
-                            <span className="todo-drag-handle" style={{ visibility: 'hidden', pointerEvents: 'none', cursor: 'default' }}>
-                              <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor"><circle cx="2" cy="2" r="1.2"/></svg>
-                            </span>
-                            <span className="todo-collapse-spacer" />
-                            <button
-                              className={`todo-check${todo.status === 'done' ? ' todo-check-done' : todo.status === 'in-progress' ? ' todo-check-inprogress' : ''}`}
-                              onMouseDown={e => e.stopPropagation()}
-                              onClick={e => { e.stopPropagation(); handleCheck(todo); }}
-                              tabIndex={-1}
-                            >
-                              {todo.status === 'done' && (
-                                <svg width="12" height="10" viewBox="0 0 12 10">
-                                  <path d="M1 5l3.5 3.5L11 1" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-                                </svg>
-                              )}
-                              {todo.status === 'in-progress' && (
-                                <svg width="12" height="4" viewBox="0 0 12 4">
-                                  <circle cx="2"  cy="2" r="1.5" fill="currentColor"/>
-                                  <circle cx="6"  cy="2" r="1.5" fill="currentColor"/>
-                                  <circle cx="10" cy="2" r="1.5" fill="currentColor"/>
-                                </svg>
-                              )}
-                            </button>
-                            <span className="todo-bottom-text">{todo.text || '(sans titre)'}</span>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
-          </div>
-        )}
 
       </div>
 
@@ -1131,7 +1673,7 @@ export default function TodoList({ projectFilter = null, orgFilter = null, talen
       <div className="todo-divider" onMouseDown={handleDividerMouseDown} />
 
       {/* ── Right column: detail panel ────────────────────────────────── */}
-      <div className="todo-detail-col" style={{ width: rightWidth, flexShrink: 0 }}>
+      <div className="todo-detail-col" ref={detailRef} style={{ width: rightWidth, flexShrink: 0 }}>
         <TodoDetailPanel
           todo={focusedTodo}
           state={state}

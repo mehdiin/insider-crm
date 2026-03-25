@@ -9,17 +9,29 @@ import { genId } from '../utils/id';
 function formatDueDateShort(iso) {
   if (!iso) return null;
   const d = new Date(iso);
-  const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
-  const dateStr = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-  const timeStr = hasTime
-    ? ` ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
-    : '';
-  return dateStr + timeStr;
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dateStart  = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays   = Math.round((dateStart - todayStart) / 86400000);
+  const dateFmt    = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+
+  if (diffDays === 0) return `Aujourd'hui, ${dateFmt}`;
+  if (diffDays === 1) return `Demain, ${dateFmt}`;
+  if (diffDays > 1)   return `${dateFmt} (dans ${diffDays} jours)`;
+  return `${dateFmt} (en retard de ${Math.abs(diffDays)} jour${Math.abs(diffDays) > 1 ? 's' : ''})`;
 }
 
-function isOverdue(iso) {
-  if (!iso) return false;
-  return new Date(iso) < new Date();
+function dueDateUrgency(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dateStart  = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays   = Math.round((dateStart - todayStart) / 86400000);
+  if (diffDays < 0)  return 'overdue';
+  if (diffDays === 0) return 'today';
+  if (diffDays === 1) return 'tomorrow';
+  return 'future';
 }
 
 // ── Auto-grow textarea ─────────────────────────────────────────────────────────
@@ -58,7 +70,7 @@ const FLAG_INNER = 'M18.08605752963257,4.944165442132569L5.3010025296325685,4.94
 
 function IconCalendar() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+    <svg width="20" height="20" viewBox="2 2 20 20" fill="currentColor">
       <path fillRule="evenodd" d="M3,8L3,16C3,18.761423999999998,5.2385762,21,8,21L16,21C18.761423999999998,21,21,18.761423999999998,21,16L21,8C21,5.2385762,18.761423999999998,3,16,3L8,3C5.2385762,3,3,5.2385762,3,8ZM5.5251262,18.474871999999998Q4.5,17.449745,4.5,16L4.5,8L19.5,8L19.5,16Q19.5,17.449742999999998,18.474871999999998,18.474871999999998Q17.449742999999998,19.5,16,19.5L8,19.5Q6.550254600000001,19.5,5.5251262,18.474871999999998ZM19.174026,6.5Q18.921929,5.9721839,18.474871999999998,5.5251262Q17.449745,4.5,16,4.5L8,4.5Q6.5502524,4.5,5.5251262,5.5251262Q5.0780674999999995,5.9721849,4.8259716,6.5L19.174026,6.5ZM7.583333,10.5L8.4166665,10.5L8.4166665,12.166666L7.583333,12.166666ZM11.583333,10.5L12.416666,10.5L12.416666,12.166666L11.583333,12.166666ZM15.583333,10.5L16.416666,10.5L16.416666,12.166666L15.583333,12.166666ZM7.583333,14.5L8.4166665,14.5L8.4166665,16.166666L7.583333,16.166666ZM11.583333,14.5L12.416666,14.5L12.416666,16.166666L11.583333,16.166666Z"/>
     </svg>
   );
@@ -66,8 +78,9 @@ function IconCalendar() {
 
 function IconAssign() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-      <path fillRule="evenodd" d="M8.1200948,6.1689582000000005Q8.1200938,4.5618536,9.2564893,3.4254578Q10.3928843,2.2890625,11.9999924,2.2890625Q13.607098,2.2890625,14.743494,3.4254581Q15.87989,4.5618527,15.87989,6.1689599Q15.87989,7.7760668,14.743494,8.9124613Q13.607098,10.0488582,11.9999924,10.0488582Q10.3928843,10.0488577,9.2564898,8.9124613Q8.1200943,7.7760663,8.1200948,6.1689582000000005ZM10.2558513,7.9130983Q10.9783001,8.6355448,11.9999924,8.6355448Q13.021681,8.6355448,13.744129,7.9130983Q14.466577,7.1906505,14.466577,6.1689591Q14.466577,5.1472676,13.744129,4.4248209Q13.021683,3.7023753,11.9999924,3.7023754Q10.9782991,3.7023754,10.2558532,4.4248209Q9.5334063,5.1472671000000005,9.5334063,6.1689603Q9.5334063,7.1906514,10.2558513,7.9130983ZM4.803901,13.2931285Q5.7745266,12.3225035,7.032937,11.7902403Q8.3356771,11.2392282,9.7624569,11.2392282L14.237546,11.2392292Q15.664324,11.2392292,16.967063,11.7902403Q18.225472,12.3225035,19.196098,13.2931295Q20.166723,14.2637545,20.698988,15.5221645Q21.25,16.8249065,21.25,18.2516835Q21.25,19.6734235,20.244673,20.6787475Q19.239349,21.6840745,17.817611,21.6840745L6.1823893000000005,21.6840745Q4.7606487,21.6840745,3.7553235000000003,20.6787475Q2.75,19.6734255,2.75,18.2516835Q2.75,16.8249065,3.30101359,15.5221655Q3.8332783,14.2637515,4.803901,13.2931285ZM4.2412109000000004,18.2516995Q4.2412109000000004,19.0558585,4.809836600000001,19.6244855Q5.3784614,20.1931075,6.1826205000000005,20.1931075L17.817842,20.1931075Q18.622004,20.1931075,19.190624,19.6244855Q19.759247,19.0558585,19.759247,18.2516995Q19.759247,15.9646305,18.142046,14.3474285Q16.524843,12.7302245,14.237774,12.7302245L9.7626882,12.7302245Q7.4756174,12.7302245,5.8584142,14.3474285Q4.2412109000000004,15.9646305,4.2412109000000004,18.2516995ZM13.25293,13.5612795L13.263672,13.5612795Q13.571865,13.5612795,13.78125,13.7868655L15.82666,16.0363765Q16.005066,16.2288735,16.015137,16.4907225Q16.015636999999998,16.5039735,16.015625,16.5173335Q16.015625,16.8044245,15.81543,17.010253499999997L13.712402,19.1843265Q13.508365,19.3939915,13.216309,19.3979495L13.205566,19.3979495Q12.918823,19.3979455,12.7133789,19.1977535Q12.5036049,18.9936085,12.4995117,18.7016605L12.4995117,18.6909175Q12.4995136,18.4041745,12.7001953,18.197753499999997L13.630859,17.2238765L9.2061768,17.2238765C8.815896500000001,17.2238765,8.4995117,16.9074915,8.4995117,16.517211500000002C8.4995117,16.126932500000002,8.815896500000001,15.8105465,9.2061768,15.8105465L13.678711,15.8105465L12.7456055,14.7487795Q12.5606441,14.5492115,12.5566406,14.2783205L12.5566406,14.2675785Q12.5566416,13.9593645,12.783203,13.7497555Q12.982334,13.5652005,13.25293,13.5612795Z"/>
+    <svg width="20" height="18" viewBox="1490 490 1150 1110" fill="none" stroke="currentColor" strokeWidth="73" strokeLinecap="butt" strokeLinejoin="miter">
+      <path d="M2065.25 569.5C2210.23 569.5 2327.75 688.779 2327.75 835.917 2327.75 927.879 2281.84 1008.96 2212.02 1056.83L2191.6 1066.11C2382.67 1122.49 2541.1 1293.37 2561.77 1499.95 2562.62 1517.13 2565.04 1551.48 2562.04 1551.5L1568.47 1551.5C1566.33 1551.5 1568.35 1510.29 1568.74 1501.11 1589.41 1294.53 1744.4 1121.33 1935.47 1064.95L1918.49 1056.83C1848.67 1008.96 1802.76 927.879 1802.76 835.917 1802.76 688.779 1920.28 569.5 2065.25 569.5Z" fill="none"/>
+      <path d="M1856.5 1278.83 2276.74 1278.83C2296.99 1278.83 2313.41 1295.25 2313.41 1315.5 2313.41 1335.75 2296.99 1352.17 2276.74 1352.17L1856.5 1352.17C1836.25 1352.17 1819.83 1335.75 1819.83 1315.5 1819.83 1295.25 1836.25 1278.83 1856.5 1278.83ZM2154.22 1159.57 2332.42 1315.5 2154.22 1471.43C2138.98 1484.76 2115.81 1483.22 2102.48 1467.98 2089.14 1452.74 2090.69 1429.57 2105.93 1416.24L2252.59 1287.91 2252.59 1343.09 2105.93 1214.76C2090.69 1201.43 2089.14 1178.26 2102.48 1163.02 2115.81 1147.78 2138.98 1146.24 2154.22 1159.57Z" fill="currentColor" stroke="none"/>
     </svg>
   );
 }
@@ -92,21 +105,44 @@ function IconFlag({ priority }) {
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function TodoDetailPanel({ todo, state, dispatch, createOrg, createTalent }) {
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const datePickerRef  = useRef(null);
-  const subInputRefs   = useRef({});
+  const [showDatePicker,  setShowDatePicker]  = useState(false);
+  const [showStatusMenu,  setShowStatusMenu]  = useState(false);
+  const [showPriorityMenu, setShowPriorityMenu] = useState(false);
+  const [subSelectedIds, setSubSelectedIds] = useState(new Set());
+  const datePickerRef   = useRef(null);
+  const statusMenuRef   = useRef(null);
+  const priorityMenuRef = useRef(null);
+  const subInputRefs    = useRef({});
 
   // Close date picker on outside click
   useEffect(() => {
     if (!showDatePicker) return;
     function handler(e) {
-      if (datePickerRef.current && !datePickerRef.current.contains(e.target)) {
-        setShowDatePicker(false);
-      }
+      if (datePickerRef.current && !datePickerRef.current.contains(e.target)) setShowDatePicker(false);
     }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showDatePicker]);
+
+  // Close status menu on outside click
+  useEffect(() => {
+    if (!showStatusMenu) return;
+    function handler(e) {
+      if (statusMenuRef.current && !statusMenuRef.current.contains(e.target)) setShowStatusMenu(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showStatusMenu]);
+
+  // Close priority menu on outside click
+  useEffect(() => {
+    if (!showPriorityMenu) return;
+    function handler(e) {
+      if (priorityMenuRef.current && !priorityMenuRef.current.contains(e.target)) setShowPriorityMenu(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showPriorityMenu]);
 
   // ── Empty state ─────────────────────────────────────────────────────────────
 
@@ -132,8 +168,9 @@ export default function TodoDetailPanel({ todo, state, dispatch, createOrg, crea
     update(updates);
   };
 
-  const dueDateLabel = formatDueDateShort(todo.dueDate);
-  const overdue      = isOverdue(todo.dueDate) && todo.status !== 'done';
+  const dueDateLabel  = formatDueDateShort(todo.dueDate);
+  const dateUrgency   = dueDateUrgency(todo.dueDate);
+  const overdue       = (dateUrgency === 'overdue' || dateUrgency === 'today') && todo.status !== 'done';
 
   const nextStatus  = todo.status === 'pending'     ? 'in-progress'
                     : todo.status === 'in-progress' ? 'done'
@@ -163,6 +200,94 @@ export default function TodoDetailPanel({ todo, state, dispatch, createOrg, crea
     setTimeout(() => { if (subInputRefs.current[id]) subInputRefs.current[id].focus(); }, 0);
   };
 
+  // Insert subtask after a specific subtask
+  const addSubtaskAfter = (afterId) => {
+    const id = genId();
+    const afterIdx = state.todos.findIndex(t => t.id === afterId);
+    if (afterIdx === -1) return;
+    dispatch({ type: 'ADD_TODO', id, text: '', indent: todo.indent + 1, insertAt: afterIdx + 1 });
+    setTimeout(() => { if (subInputRefs.current[id]) subInputRefs.current[id].focus(); }, 0);
+  };
+
+  const moveSubtask = (subId, dir) => {
+    const idx = subtasks.findIndex(s => s.id === subId);
+    if (idx === -1) return;
+    if (dir === 'up' && idx === 0) return;
+    if (dir === 'down' && idx === subtasks.length - 1) return;
+    const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+    const globalA = state.todos.findIndex(t => t.id === subtasks[idx].id);
+    const globalB = state.todos.findIndex(t => t.id === subtasks[swapIdx].id);
+    if (globalA === -1 || globalB === -1) return;
+    const newTodos = [...state.todos];
+    [newTodos[globalA], newTodos[globalB]] = [newTodos[globalB], newTodos[globalA]];
+    dispatch({ type: 'REORDER_TODOS', todos: newTodos });
+    setTimeout(() => { if (subInputRefs.current[subId]) subInputRefs.current[subId].focus(); }, 0);
+  };
+
+  const handleSubKeyDown = (e, sub, subIdx) => {
+    const isMeta = e.metaKey || e.ctrlKey;
+
+    // Enter — create new subtask after this one (only if current has text)
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (sub.text.trim() !== '') addSubtaskAfter(sub.id);
+      return;
+    }
+    // Backspace on empty — delete
+    if (e.key === 'Backspace' && sub.text === '') {
+      e.preventDefault();
+      const prevSub = subtasks[subIdx - 1];
+      dispatch({ type: 'DELETE_TODOS', ids: [sub.id] });
+      if (prevSub) setTimeout(() => { if (subInputRefs.current[prevSub.id]) subInputRefs.current[prevSub.id].focus(); }, 0);
+      return;
+    }
+    // Shift+Delete — delete selected or current
+    if (e.key === 'Delete' && e.shiftKey) {
+      e.preventDefault();
+      const ids = subSelectedIds.size > 0 ? [...subSelectedIds] : [sub.id];
+      dispatch({ type: 'DELETE_TODOS', ids });
+      setSubSelectedIds(new Set());
+      return;
+    }
+    // Arrow Up/Down — navigate between subtasks
+    if (e.key === 'ArrowUp' && !isMeta) {
+      if (subIdx > 0) {
+        e.preventDefault();
+        const prev = subtasks[subIdx - 1];
+        if (subInputRefs.current[prev.id]) subInputRefs.current[prev.id].focus();
+        if (e.shiftKey) setSubSelectedIds(prev => { const n = new Set(prev); n.add(sub.id); n.add(prev.id); return n; });
+        else setSubSelectedIds(new Set());
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown' && !isMeta) {
+      if (subIdx < subtasks.length - 1) {
+        e.preventDefault();
+        const next = subtasks[subIdx + 1];
+        if (subInputRefs.current[next.id]) subInputRefs.current[next.id].focus();
+        if (e.shiftKey) setSubSelectedIds(prev => { const n = new Set(prev); n.add(sub.id); n.add(next.id); return n; });
+        else setSubSelectedIds(new Set());
+      }
+      return;
+    }
+    // Cmd+Arrow Up/Down — move subtask
+    if (e.key === 'ArrowUp' && isMeta) { e.preventDefault(); moveSubtask(sub.id, 'up'); return; }
+    if (e.key === 'ArrowDown' && isMeta) { e.preventDefault(); moveSubtask(sub.id, 'down'); return; }
+  };
+
+  // Helper: compute fixed position for popup menus (align right edge to button right)
+  function getPopupPos(ref) {
+    if (!ref?.current) return {};
+    const rect = ref.current.getBoundingClientRect();
+    const menuWidth = 170;
+    let left = rect.left;
+    // If menu would overflow right edge, align to right side of button
+    if (left + menuWidth > window.innerWidth) {
+      left = rect.right - menuWidth;
+    }
+    return { top: rect.bottom + 4, left };
+  }
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -174,52 +299,153 @@ export default function TodoDetailPanel({ todo, state, dispatch, createOrg, crea
         {/* Left-side group — fixé au bord gauche */}
         <div className="detail-tb-left">
 
-          <button
-            className={`detail-check${todo.status === 'done' ? ' detail-check-done' : todo.status === 'in-progress' ? ' detail-check-inprogress' : ''}`}
-            style={todo.status === 'pending' && pBorderColor ? { borderColor: pBorderColor } : {}}
-            onClick={() => {
-              if (nextStatus === 'in-progress') playInProgressSound();
-              else if (nextStatus === 'done') playCompletionSound();
-              update({ status: nextStatus });
-            }}
-            title={statusTitle}
-          >
-            {todo.status === 'done' && (
-              <svg width="14" height="12" viewBox="0 0 14 12">
-                <path d="M1 6l4 4L13 1" stroke="currentColor" strokeWidth="2.2"
-                  fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+          {/* Status menu */}
+          <div className="detail-popup-wrap" ref={statusMenuRef}>
+            <div
+              className="detail-check-wrap"
+              onClick={() => setShowStatusMenu(v => !v)}
+              title={statusTitle}
+            >
+              <span
+                className={`detail-check${todo.status === 'done' ? ' detail-check-done' : todo.status === 'in-progress' ? ' detail-check-inprogress' : ''}`}
+                style={todo.status === 'pending' && pBorderColor ? { borderColor: pBorderColor } : {}}
+              >
+                {todo.status === 'done' && (
+                  <svg width="12" height="10" viewBox="0 0 12 10">
+                    <path d="M1 5l3.5 3.5L11 1" stroke="currentColor" strokeWidth="2"
+                      fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                )}
+                {todo.status === 'in-progress' && (
+                  <svg width="12" height="4" viewBox="0 0 12 4">
+                    <circle cx="2"  cy="2" r="1.5" fill="currentColor"/>
+                    <circle cx="6"  cy="2" r="1.5" fill="currentColor"/>
+                    <circle cx="10" cy="2" r="1.5" fill="currentColor"/>
+                  </svg>
+                )}
+              </span>
+            </div>
+            {showStatusMenu && (
+              <div className="detail-popup-menu" style={getPopupPos(statusMenuRef)}>
+                {[
+                  { status: 'pending',     label: 'À faire',   icon: (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <rect x="1.5" y="1.5" width="13" height="13" rx="3" stroke="currentColor" strokeWidth="1.5"/>
+                    </svg>
+                  )},
+                  { status: 'in-progress', label: 'En cours',  icon: (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <rect x="1.5" y="1.5" width="13" height="13" rx="3" stroke="#f97316" strokeWidth="1.5" fill="#f97316"/>
+                      <circle cx="5" cy="8" r="1.2" fill="#fff"/><circle cx="8" cy="8" r="1.2" fill="#fff"/><circle cx="11" cy="8" r="1.2" fill="#fff"/>
+                    </svg>
+                  )},
+                  { status: 'done',        label: 'Terminée',  icon: (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                      <rect x="1.5" y="1.5" width="13" height="13" rx="3" stroke="#22c55e" strokeWidth="1.5" fill="#22c55e"/>
+                      <path d="M4.5 8.5l2.5 2.5L11.5 5.5" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )},
+                ].map(opt => (
+                  <button
+                    key={opt.status}
+                    className={`detail-popup-opt${todo.status === opt.status ? ' selected' : ''}`}
+                    onClick={() => {
+                      if (opt.status === 'in-progress') playInProgressSound();
+                      else if (opt.status === 'done') playCompletionSound();
+                      update({ status: opt.status });
+                      setShowStatusMenu(false);
+                    }}
+                  >
+                    {opt.icon}
+                    <span>{opt.label}</span>
+                    {todo.status === opt.status && (
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                        <path d="M2 6.5L4.5 9L10 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
             )}
-            {todo.status === 'in-progress' && (
-              <svg width="14" height="5" viewBox="0 0 14 5">
-                <circle cx="2.5"  cy="2.5" r="2" fill="currentColor"/>
-                <circle cx="7"    cy="2.5" r="2" fill="currentColor"/>
-                <circle cx="11.5" cy="2.5" r="2" fill="currentColor"/>
-              </svg>
+          </div>
+
+          {/* Priority menu */}
+          <div className="detail-popup-wrap" ref={priorityMenuRef}>
+            <button
+              className="detail-tb-btn detail-tb-icon"
+              onClick={() => setShowPriorityMenu(v => !v)}
+              title={todo.priority ? PRIORITY_LABEL[todo.priority] : 'Aucune priorité'}
+            >
+              <IconFlag priority={todo.priority} />
+            </button>
+            {showPriorityMenu && (
+              <div className="detail-popup-menu" style={getPopupPos(priorityMenuRef)}>
+                {[
+                  { priority: 'high',   label: 'Priorité élevée',  color: '#D52B25' },
+                  { priority: 'medium', label: 'Priorité moyenne', color: '#FAA80C' },
+                  { priority: 'low',    label: 'Priorité faible',  color: '#4772FB' },
+                  { priority: null,     label: 'Sans priorité',    color: '#888'    },
+                ].map(opt => (
+                  <button
+                    key={String(opt.priority)}
+                    className={`detail-popup-opt${todo.priority === opt.priority ? ' selected' : ''}`}
+                    onClick={() => {
+                      update({ priority: opt.priority });
+                      setShowPriorityMenu(false);
+                    }}
+                  >
+                    <svg width="12" height="14" viewBox="0 0 10 12" fill="none" style={{ color: opt.color }}>
+                      <path d="M1.5 11V1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <path d="M1.5 2H8.5L6.5 5L8.5 8H1.5V2Z" fill="currentColor"/>
+                    </svg>
+                    <span>{opt.label}</span>
+                    {todo.priority === opt.priority && (
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                        <path d="M2 6.5L4.5 9L10 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
             )}
-          </button>
+          </div>
 
-          <span className="detail-toolbar-sep" />
-
-          <button className="detail-tb-btn detail-tb-date" title="Date d'échéance">
-            <IconCalendar />
-            <span>Date d'échéance</span>
-          </button>
-
-        </div>
-
-        {/* Right-side actions — toujours collées au bord droit */}
-        <div className="detail-tb-actions">
           <button className="detail-tb-btn detail-tb-icon" title="Assigner">
             <IconAssign />
           </button>
-          <button
-            className="detail-tb-btn detail-tb-icon"
-            onClick={cyclePriority}
-            title={todo.priority ? PRIORITY_LABEL[todo.priority] : 'Aucune priorité'}
-          >
-            <IconFlag priority={todo.priority} />
-          </button>
+
+          <div ref={datePickerRef} style={{ position: 'relative' }}>
+            <div className={`detail-tb-btn detail-tb-date${todo.dueDate ? ` has-date date-${dateUrgency}` : ''}`} title="Date d'échéance">
+              <span style={{ display: 'flex', cursor: 'pointer' }} onClick={() => {
+                // Cycle: none → today → tomorrow → +7d → +30d → none
+                const now = new Date(); now.setHours(0,0,0,0);
+                const addD = n => { const d = new Date(now); d.setDate(d.getDate() + n); return d; };
+                const toISO = d => d.toISOString();
+                const sameDay = (a, b) => a && b && new Date(a).toDateString() === b.toDateString();
+
+                if (!todo.dueDate) { update({ dueDate: toISO(now) }); }
+                else if (sameDay(todo.dueDate, now))       { update({ dueDate: toISO(addD(1)) }); }
+                else if (sameDay(todo.dueDate, addD(1)))   { update({ dueDate: toISO(addD(7)) }); }
+                else if (sameDay(todo.dueDate, addD(7)))   { update({ dueDate: toISO(addD(30)) }); }
+                else { update({ dueDate: null }); }
+              }}>
+                <IconCalendar />
+              </span>
+              <span
+                onClick={() => setShowDatePicker(v => !v)}
+                style={{ cursor: 'pointer' }}
+              >{todo.dueDate ? dueDateLabel : "Date d'échéance"}</span>
+            </div>
+            {showDatePicker && (
+              <div className="dp-portal">
+                <DateTimePicker
+                  value={todo.dueDate}
+                  onChange={val => update({ dueDate: val })}
+                  onClose={() => setShowDatePicker(false)}
+                />
+              </div>
+            )}
+          </div>
         </div>
 
       </div>
@@ -235,12 +461,12 @@ export default function TodoDetailPanel({ todo, state, dispatch, createOrg, crea
 
       {/* ── Subtasks ──────────────────────────────────────────────────────── */}
       <div className="detail-subtasks">
-        {subtasks.map(sub => {
+        {subtasks.map((sub, subIdx) => {
           const subNext = sub.status === 'pending'     ? 'in-progress'
                         : sub.status === 'in-progress' ? 'done'
                         : 'pending';
           return (
-            <div key={sub.id} className="detail-subtask-row">
+            <div key={sub.id} className={`detail-subtask-row${subSelectedIds.has(sub.id) ? ' detail-subtask-selected' : ''}`}>
               <button
                 className={`detail-subtask-check${sub.status === 'done' ? ' done' : sub.status === 'in-progress' ? ' in-progress' : ''}`}
                 onClick={() => {
@@ -270,21 +496,22 @@ export default function TodoDetailPanel({ todo, state, dispatch, createOrg, crea
                 value={sub.text}
                 placeholder="Sous-tâche…"
                 onChange={e => dispatch({ type: 'UPDATE_TODO', id: sub.id, updates: { text: e.target.value } })}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') { e.preventDefault(); addSubtask(); }
-                  if (e.key === 'Backspace' && sub.text === '') {
-                    e.preventDefault();
-                    dispatch({ type: 'DELETE_TODOS', ids: [sub.id] });
-                  }
-                }}
+                onBlur={() => { if (sub.text.trim() === '') dispatch({ type: 'DELETE_TODOS', ids: [sub.id] }); }}
+                onFocus={() => setSubSelectedIds(new Set())}
+                onKeyDown={e => handleSubKeyDown(e, sub, subIdx)}
               />
             </div>
           );
         })}
         {todo.indent === 0 && (
-          <button className="detail-subtask-add" onClick={addSubtask}>
-            + Ajouter une sous-tâche
-          </button>
+          <div className="detail-subtask-row detail-subtask-add-row" onClick={addSubtask} style={{ cursor: 'pointer' }}>
+            <span className="detail-subtask-plus">
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <path d="M6 1v10M1 6h10"/>
+              </svg>
+            </span>
+            <span className="detail-subtask-add-label">Ajouter une sous-tâche…</span>
+          </div>
         )}
       </div>
 
@@ -294,99 +521,9 @@ export default function TodoDetailPanel({ todo, state, dispatch, createOrg, crea
         value={todo.notes || ''}
         onChange={e => update({ notes: e.target.value })}
         placeholder="Ajoutez une note…"
-        minRows={4}
+        minRows={1}
       />
 
-      {/* ── Divider ───────────────────────────────────────────────────────── */}
-      <div className="detail-divider" />
-
-      {/* ── Properties ────────────────────────────────────────────────────── */}
-      <div className="detail-props">
-
-
-        {/* Organisation (multi) */}
-        <div className="detail-prop-row">
-          <span className="detail-prop-label">🏢 Organisation</span>
-          <div className="detail-prop-value" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {(todo.organizationIds || []).map(oid => {
-              const o = state.organizations.find(x => x.id === oid);
-              if (!o) return null;
-              return (
-                <div key={oid} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ flex: 1, fontSize: 13 }}>{o.name}</span>
-                  {!todo.projectId && (
-                    <button
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, padding: '0 2px' }}
-                      onClick={() => update({ organizationIds: (todo.organizationIds || []).filter(id => id !== oid) })}
-                      title="Retirer"
-                    >×</button>
-                  )}
-                </div>
-              );
-            })}
-            {!todo.projectId && (
-              <SearchableSelect
-                options={state.organizations.filter(o => !(todo.organizationIds || []).includes(o.id))}
-                value={null}
-                onChange={id => { if (id) update({ organizationIds: [...(todo.organizationIds || []), id] }); }}
-                onCreate={createOrg}
-                placeholder="Ajouter une marque…"
-              />
-            )}
-          </div>
-        </div>
-
-        {/* Talent (multi) */}
-        <div className="detail-prop-row">
-          <span className="detail-prop-label">🎬 Talent</span>
-          <div className="detail-prop-value" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {(todo.talentIds || []).map(tid => {
-              const t = state.talents.find(x => x.id === tid);
-              if (!t) return null;
-              return (
-                <div key={tid} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ flex: 1, fontSize: 13 }}>{t.name}</span>
-                  {!todo.projectId && (
-                    <button
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, padding: '0 2px' }}
-                      onClick={() => update({ talentIds: (todo.talentIds || []).filter(id => id !== tid) })}
-                      title="Retirer"
-                    >×</button>
-                  )}
-                </div>
-              );
-            })}
-            {!todo.projectId && (
-              <SearchableSelect
-                options={state.talents.filter(t => !(todo.talentIds || []).includes(t.id))}
-                value={null}
-                onChange={id => { if (id) update({ talentIds: [...(todo.talentIds || []), id] }); }}
-                onCreate={createTalent}
-                placeholder="Ajouter un talent…"
-              />
-            )}
-          </div>
-        </div>
-
-        {/* Project */}
-        <div className="detail-prop-row">
-          <span className="detail-prop-label">📊 Projet</span>
-          <div className="detail-prop-value">
-            <SearchableSelect
-              options={state.projects.map(p => ({ id: p.id, name: p.number }))}
-              value={todo.projectId}
-              onChange={handleProjectChange}
-              placeholder="Aucun"
-            />
-          </div>
-        </div>
-
-        {todo.projectId && (
-          <p className="detail-prop-note">
-            Organisation et talent hérités du projet.
-          </p>
-        )}
-      </div>
     </div>
   );
 }

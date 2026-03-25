@@ -108,7 +108,7 @@ function reducer(state, action) {
         projectId:       action.projectId       || null,
         dueDate:         null,
         notes:           '',
-        priority:        null,
+        priority:        action.priority || null,
       };
       const todos = [...state.todos];
       todos.splice(action.insertAt !== undefined ? action.insertAt : todos.length, 0, newTodo);
